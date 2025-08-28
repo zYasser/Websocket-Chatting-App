@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Chat App</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .chat-header {
+            background: #007bff;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .chat-messages {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 20px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+        .message.sent {
+            background: #007bff;
+            color: white;
+            margin-left: auto;
+        }
+        .message.received {
+            background: #e9ecef;
+            color: #333;
+        }
+        .message.system {
+            background: #ffc107;
+            color: #333;
+            text-align: center;
+            margin: 10px auto;
+            max-width: 100%;
+        }
+        .message-info {
+            font-size: 12px;
+            margin-bottom: 5px;
+            opacity: 0.7;
+        }
+        .chat-input {
+            padding: 20px;
+            border-top: 1px solid #dee2e6;
+            background: white;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .username-input {
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .username-input h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        .username-input input {
+            margin-bottom: 20px;
+            padding: 15px;
+            font-size: 18px;
+            text-align: center;
+        }
+        .username-input button {
+            padding: 15px 30px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>WebSocket Chat App</h1>
+        </div>
+        
+        <div id="username-section" class="username-input">
+            <h2>Enter your username to start chatting</h2>
+            <input type="text" id="username-input" placeholder="Enter username" maxlength="20">
+            <button onclick="joinChat()">Join Chat</button>
+        </div>
+        
+        <div id="chat-section" style="display: none;">
+            <div class="chat-messages" id="chat-messages"></div>
+            <div class="chat-input">
+                <div class="input-group">
+                    <input type="text" id="message-input" placeholder="Type your message..." maxlength="500">
+                    <button onclick="sendMessage()" id="send-button">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stompClient = null;
+        let username = null;
+
+        function joinChat() {
+            username = document.getElementById('username-input').value.trim();
+            if (username === '') {
+                alert('Please enter a username');
+                return;
+            }
+            
+            document.getElementById('username-section').style.display = 'none';
+            document.getElementById('chat-section').style.display = 'block';
+            
+            connectWebSocket();
+        }
+
+        function connectWebSocket() {
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            
+            stompClient.connect({}, function (frame) {
+                console.log('Connected: ' + frame);
+                
+                // Subscribe to the public chat topic
+                stompClient.subscribe('/topic/public', function (message) {
+                    showMessage(JSON.parse(message.body));
+                });
+                
+                // Send join message
+                stompClient.send("/app/chat.addUser", {}, JSON.stringify({
+                    sender: username,
+                    type: 'JOIN',
+                    content: username + ' joined the chat!'
+                }));
+                
+                // Enable send button
+                document.getElementById('send-button').disabled = false;
+                document.getElementById('message-input').focus();
+            });
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('message-input');
+            const messageContent = messageInput.value.trim();
+            
+            if (messageContent && stompClient) {
+                const chatMessage = {
+                    sender: username,
+                    content: messageContent,
+                    type: 'CHAT'
+                };
+                
+                stompClient.send("/app/chat.sendMessage", {}, JSON.stringify(chatMessage));
+                messageInput.value = '';
+            }
+        }
+
+        function showMessage(message) {
+            const messagesContainer = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            
+            let messageClass = 'message received';
+            if (message.sender === username) {
+                messageClass = 'message sent';
+            } else if (message.type === 'JOIN' || message.type === 'LEAVE') {
+                messageClass = 'message system';
+            }
+            
+            messageDiv.className = messageClass;
+            
+            let messageContent = '';
+            if (message.type === 'JOIN' || message.type === 'LEAVE') {
+                messageContent = message.content;
+            } else {
+                messageContent = `
+                    <div class="message-info">${message.sender} - ${formatTime(message.timestamp)}</div>
+                    <div>${message.content}</div>
+                `;
+            }
+            
+            messageDiv.innerHTML = messageContent;
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString();
+        }
+
+        // Handle Enter key in message input
+        document.getElementById('message-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Handle Enter key in username input
+        document.getElementById('username-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                joinChat();
+            }
+        });
+    </script>
+</body>
+</html>
+
+
