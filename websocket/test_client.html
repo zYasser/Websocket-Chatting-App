@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test Client</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .log { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; }
+        .input-group { margin: 10px 0; }
+        input, button { padding: 8px; margin: 5px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebSocket Test Client</h1>
+        
+        <div class="input-group">
+            <label>Username: </label>
+            <input type="text" id="username" value="TestUser" />
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+        </div>
+        
+        <div class="input-group">
+            <label>Message: </label>
+            <input type="text" id="message" placeholder="Type a message..." />
+            <button onclick="sendMessage()">Send</button>
+        </div>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <h3>Connection Log:</h3>
+        <div id="log" class="log"></div>
+        
+        <h3>Received Messages:</h3>
+        <div id="messages" class="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let username = 'TestUser';
+        
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function addMessage(message) {
+            const msgDiv = document.getElementById('messages');
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${JSON.stringify(message)}`;
+            msgDiv.appendChild(entry);
+            msgDiv.scrollTop = msgDiv.scrollHeight;
+        }
+        
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            if (connected) {
+                statusDiv.textContent = 'Connected';
+                statusDiv.className = 'status connected';
+            } else {
+                statusDiv.textContent = 'Disconnected';
+                statusDiv.className = 'status disconnected';
+            }
+        }
+        
+        function connect() {
+            username = document.getElementById('username').value || 'TestUser';
+            const wsUrl = `ws://${window.location.host}/ws?username=${encodeURIComponent(username)}`;
+            
+            log(`Connecting to: ${wsUrl}`);
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = function() {
+                    log('WebSocket connected successfully');
+                    updateStatus(true);
+                };
+                
+                ws.onmessage = function(event) {
+                    log(`Received: ${event.data}`);
+                    try {
+                        const message = JSON.parse(event.data);
+                        addMessage(message);
+                    } catch (e) {
+                        log(`Error parsing message: ${e}`);
+                    }
+                };
+                
+                ws.onclose = function(event) {
+                    log(`WebSocket closed: ${event.code} - ${event.reason}`);
+                    updateStatus(false);
+                    ws = null;
+                };
+                
+                ws.onerror = function(error) {
+                    log(`WebSocket error: ${error}`);
+                };
+                
+            } catch (error) {
+                log(`Connection error: ${error}`);
+            }
+        }
+        
+        function disconnect() {
+            if (ws) {
+                log('Disconnecting...');
+                ws.close();
+            }
+        }
+        
+        function sendMessage() {
+            const messageText = document.getElementById('message').value.trim();
+            if (!messageText) {
+                log('No message to send');
+                return;
+            }
+            
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected');
+                return;
+            }
+            
+            const messageObj = {
+                type: 'message',
+                content: messageText,
+                timestamp: new Date()
+            };
+            
+            log(`Sending: ${JSON.stringify(messageObj)}`);
+            
+            try {
+                ws.send(JSON.stringify(messageObj));
+                log('Message sent successfully');
+                document.getElementById('message').value = '';
+            } catch (error) {
+                log(`Error sending message: ${error}`);
+            }
+        }
+        
+        // Handle Enter key in message input
+        document.getElementById('message').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        
+        // Handle Enter key in username input
+        document.getElementById('username').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                connect();
+            }
+        });
+    </script>
+</body>
+</html>
+
